@@ -1,1 +1,3 @@
 httpx
+# The Vercel adapter imports the upstream package, which is installed here.
+git+https://github.com/Sophomoresty/gemini-web2api.git@2bb988bfcbb82a7fab5d2c99aa5560ff40d64f7e
