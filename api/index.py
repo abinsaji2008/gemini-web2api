@@ -1,22 +1,58 @@
+import importlib.util
 import os
 import sys
 import tempfile
+import urllib.request
 from pathlib import Path
 
-# Ensure the repository root is importable when Vercel invokes this function.
-ROOT = Path(__file__).resolve().parent.parent
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+# This repository is intentionally small, so Vercel does not need to build the
+# upstream project as a Git dependency. The upstream project is pinned to a
+# known commit and loaded into /tmp on a cold start.
+UPSTREAM_REF = os.getenv(
+    "GEMINI_WEB2API_UPSTREAM_REF",
+    "2bb988bfcbb82a7fab5d2c99aa5560ff40d64f7e",
+)
+UPSTREAM_URL = (
+    "https://raw.githubusercontent.com/Sophomoresty/gemini-web2api/"
+    f"{UPSTREAM_REF}/gemini_web2api.py"
+)
+BOOTSTRAP_DIR = Path(tempfile.gettempdir()) / "gemini-web2api"
+UPSTREAM_FILE = BOOTSTRAP_DIR / "gemini_web2api_upstream.py"
 
-from gemini_web2api.server import GeminiHandler
-from gemini_web2api.config import CONFIG
 
-# Vercel's Python runtime detects a top-level handler class that inherits from
-# BaseHTTPRequestHandler.
+def _load_upstream():
+    BOOTSTRAP_DIR.mkdir(parents=True, exist_ok=True)
+    if not UPSTREAM_FILE.exists() or UPSTREAM_FILE.stat().st_size < 1000:
+        try:
+            urllib.request.urlretrieve(UPSTREAM_URL, UPSTREAM_FILE)
+        except Exception as exc:
+            raise RuntimeError(
+                "Unable to load the pinned gemini-web2api runtime from GitHub: "
+                f"{exc}"
+            ) from exc
+
+    spec = importlib.util.spec_from_file_location(
+        "gemini_web2api_upstream", UPSTREAM_FILE
+    )
+    if spec is None or spec.loader is None:
+        raise RuntimeError("Unable to create the gemini-web2api runtime module")
+
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+_upstream = _load_upstream()
+GeminiHandler = _upstream.GeminiHandler
+CONFIG = _upstream.CONFIG
+
+# Vercel's Python runtime recognizes a top-level BaseHTTPRequestHandler subclass.
 class handler(GeminiHandler):
     pass
 
-# Configure the upstream project from Vercel Environment Variables.
+
+# Optional protection for clients using this API as an OpenAI-compatible backend.
 api_keys = os.getenv("GEMINI_API_KEYS", "")
 if api_keys.strip():
     CONFIG["api_keys"] = [k.strip() for k in api_keys.split(",") if k.strip()]
@@ -30,10 +66,8 @@ for env_name, config_key in (
     if value:
         CONFIG[config_key] = value
 
-# Vercel has an ephemeral writable /tmp directory, so an authenticated Gemini
-# cookie supplied as an Environment Variable can be exposed to the upstream
-# package through its existing cookie-file configuration without committing it
-# to GitHub.
+# Vercel gives functions an ephemeral writable /tmp directory. Accept the
+# browser cookie directly as a secret Environment Variable without committing it.
 gemini_cookie = os.getenv("GEMINI_COOKIE", "").strip()
 if gemini_cookie:
     cookie_path = Path(tempfile.gettempdir()) / "gemini-web2api-cookie.txt"
@@ -43,7 +77,6 @@ if gemini_cookie:
     except OSError:
         pass
 elif os.getenv("GEMINI_COOKIE_FILE"):
-    # Optional compatibility path for a real file supplied by the runtime.
     CONFIG["cookie_file"] = os.environ["GEMINI_COOKIE_FILE"]
 
 try:
