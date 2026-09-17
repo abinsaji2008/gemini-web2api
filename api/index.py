@@ -8,20 +8,19 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from gemini_web2api.server import GeminiHandler
-
-# Vercel's Python runtime supports the standard library HTTP request handler.
-# The repository's handler expects a BaseHTTPRequestHandler instance, so this
-# module exposes the handler class as the serverless entrypoint.
-handler = GeminiHandler
-
-# Keep configuration sourced from environment variables in serverless mode.
 from gemini_web2api.config import CONFIG
 
+# Vercel's Python runtime detects a top-level handler class that inherits from
+# BaseHTTPRequestHandler. The upstream server already implements that class,
+# so we expose a tiny subclass under the required entrypoint name.
+class handler(GeminiHandler):
+    pass
+
+# Configure the upstream project from Vercel environment variables.
 api_keys = os.getenv("GEMINI_API_KEYS", "")
 if api_keys.strip():
     CONFIG["api_keys"] = [k.strip() for k in api_keys.split(",") if k.strip()]
 
-# Optional runtime configuration.
 for env_name, config_key in (
     ("GEMINI_AUTH_USER", "auth_user"),
     ("GEMINI_XSRF_TOKEN", "xsrf_token"),
@@ -32,7 +31,6 @@ for env_name, config_key in (
     if value:
         CONFIG[config_key] = value
 
-# Increase the upstream request timeout only if explicitly configured.
 try:
     if os.getenv("GEMINI_TIMEOUT_SEC"):
         CONFIG["request_timeout_sec"] = int(os.environ["GEMINI_TIMEOUT_SEC"])
