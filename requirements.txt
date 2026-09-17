@@ -1,3 +1,5 @@
-httpx
-# The Vercel adapter imports the upstream package, which is installed here.
-git+https://github.com/Sophomoresty/gemini-web2api.git@2bb988bfcbb82a7fab5d2c99aa5560ff40d64f7e
+# Runtime dependency for Vercel streaming
+httpx>=0.25,<1
+
+# Keep the upstream implementation pinned to the reviewed commit.
+gemini-web2api @ git+https://github.com/Sophomoresty/gemini-web2api.git@2bb988bfcbb82a7fab5d2c99aa5560ff40d64f7e
