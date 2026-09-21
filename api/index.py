@@ -1,21 +1,49 @@
 import os
+import sys
+import tempfile
+import urllib.request
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 
-from gemini_web2api.server import GeminiHandler
-from gemini_web2api.config import CONFIG
+UPSTREAM_REF = os.getenv("GEMINI_WEB2API_UPSTREAM_REF", "main")
+BASE_URL = f"https://raw.githubusercontent.com/Sophomoresty/gemini-web2api/{UPSTREAM_REF}"
+CACHE_DIR = Path(tempfile.gettempdir()) / "gemini-web2api"
 
-# Vercel detects Python Functions by finding a top-level handler class that
-# explicitly inherits BaseHTTPRequestHandler.
+FILES = {
+    "gemini_web2api/__init__.py": CACHE_DIR / "gemini_web2api" / "__init__.py",
+    "gemini_web2api/config.py": CACHE_DIR / "gemini_web2api" / "config.py",
+    "gemini_web2api/models.py": CACHE_DIR / "gemini_web2api" / "models.py",
+    "gemini_web2api/gemini.py": CACHE_DIR / "gemini_web2api" / "gemini.py",
+    "gemini_web2api/tools.py": CACHE_DIR / "gemini_web2api" / "tools.py",
+    "gemini_web2api/multimodal.py": CACHE_DIR / "gemini_web2api" / "multimodal.py",
+    "gemini_web2api/server.py": CACHE_DIR / "gemini_web2api" / "server.py",
+}
+
+def _load_upstream():
+    package_dir = CACHE_DIR / "gemini_web2api"
+    package_dir.mkdir(parents=True, exist_ok=True)
+
+    for relative, destination in FILES.items():
+        if not destination.exists() or destination.stat().st_size < 100:
+            urllib.request.urlretrieve(f"{BASE_URL}/{relative}", destination)
+
+    sys.path.insert(0, str(CACHE_DIR))
+    import gemini_web2api.server as server
+    import gemini_web2api.config as config
+    return server.GeminiHandler, config.CONFIG
+
+GeminiHandler, CONFIG = _load_upstream()
+
+# Vercel's static detector requires an explicit top-level handler class.
 class handler(BaseHTTPRequestHandler):
     pass
 
-# Reuse the complete upstream GeminiHandler implementation while keeping the
-# explicit BaseHTTPRequestHandler inheritance that Vercel's detector expects.
+# Copy the upstream request-handler implementation onto the Vercel handler.
 for _name, _value in GeminiHandler.__dict__.items():
     if _name not in {"__dict__", "__weakref__"}:
         setattr(handler, _name, _value)
 
+# Optional runtime configuration through Vercel Environment Variables.
 api_keys = os.getenv("GEMINI_API_KEYS", "").strip()
 if api_keys:
     CONFIG["api_keys"] = [k.strip() for k in api_keys.split(",") if k.strip()]
