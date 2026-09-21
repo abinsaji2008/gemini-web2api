@@ -3,37 +3,13 @@
   "functions": {
     "api/index.py": {
       "maxDuration": 300
-    },
-    "api/models.py": {
-      "maxDuration": 300
-    },
-    "api/chat_completions.py": {
-      "maxDuration": 300
-    },
-    "api/responses.py": {
-      "maxDuration": 300
     }
   },
   "routes": [
     {
-      "src": "^/$",
-      "methods": ["GET"],
-      "dest": "/api/index.py"
-    },
-    {
-      "src": "^/v1/models/?$",
-      "methods": ["GET"],
-      "dest": "/api/models.py"
-    },
-    {
-      "src": "^/v1/chat/completions/?$",
-      "methods": ["POST"],
-      "dest": "/api/chat_completions.py"
-    },
-    {
-      "src": "^/v1/responses/?$",
-      "methods": ["POST"],
-      "dest": "/api/responses.py"
+      "src": "/(.*)",
+      "dest": "/api/index.py",
+      "methods": ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
     }
   ]
 }
