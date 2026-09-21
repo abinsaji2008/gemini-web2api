@@ -1,26 +1,39 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "functions": {
-    "api/**/*.py": {
+    "api/index.py": {
+      "maxDuration": 300
+    },
+    "api/models.py": {
+      "maxDuration": 300
+    },
+    "api/chat_completions.py": {
+      "maxDuration": 300
+    },
+    "api/responses.py": {
       "maxDuration": 300
     }
   },
-  "rewrites": [
+  "routes": [
     {
-      "source": "/",
-      "destination": "/api/index.py"
+      "src": "^/$",
+      "methods": ["GET"],
+      "dest": "/api/index.py"
     },
     {
-      "source": "/v1/models",
-      "destination": "/api/models.py"
+      "src": "^/v1/models/?$",
+      "methods": ["GET"],
+      "dest": "/api/models.py"
     },
     {
-      "source": "/v1/chat/completions",
-      "destination": "/api/chat_completions.py"
+      "src": "^/v1/chat/completions/?$",
+      "methods": ["POST"],
+      "dest": "/api/chat_completions.py"
     },
     {
-      "source": "/v1/responses",
-      "destination": "/api/responses.py"
+      "src": "^/v1/responses/?$",
+      "methods": ["POST"],
+      "dest": "/api/responses.py"
     }
   ]
 }
