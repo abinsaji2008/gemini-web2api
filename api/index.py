@@ -1,6 +1,7 @@
 import os
 import sys
 import urllib.parse
+import urllib.request
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 
@@ -31,34 +32,53 @@ def _load_upstream():
     import gemini_web2api.config as config
     return server.GeminiHandler, config.CONFIG
 
-# Import here so the Vercel builder can resolve the dependency as part of the
-# module graph. Runtime files are fetched on cold start into /tmp.
-import urllib.request
 GeminiHandler, CONFIG = _load_upstream()
 
-# Vercel's Python detector requires a top-level handler inheriting directly
-# from BaseHTTPRequestHandler.
+# Vercel's Python detector requires a top-level class named "handler"
+# inheriting from BaseHTTPRequestHandler.
 class handler(BaseHTTPRequestHandler):
     pass
 
+# Reuse the complete upstream HTTP implementation.
 for _name, _value in GeminiHandler.__dict__.items():
     if _name not in {"__dict__", "__weakref__"}:
         setattr(handler, _name, _value)
 
-# Vercel internal rewrites can expose the rewritten destination as self.path.
-# Restore the original request path captured by vercel.json.
-_original_path = handler.path if hasattr(handler, "path") else ""
-_parsed = urllib.parse.urlsplit(_original_path)
-_route = urllib.parse.parse_qs(_parsed.query).get("__route", [None])[0]
-if _route is not None:
-    # Preserve any real query parameters while removing the routing marker.
-    _route_path = "/" + urllib.parse.unquote(_route).lstrip("/")
-    _query_pairs = urllib.parse.parse_qsl(_parsed.query, keep_blank_values=True)
-    _query_pairs = [(k, v) for k, v in _query_pairs if k != "__route"]
-    handler.path = _route_path + (
-        "?" + urllib.parse.urlencode(_query_pairs) if _query_pairs else ""
-    )
+def _restore_original_path(self):
+    # Internal Vercel rewrites may expose /api/index.py as self.path.
+    # vercel.json stores the real request path in the __route query parameter.
+    parsed = urllib.parse.urlsplit(self.path)
+    route_values = urllib.parse.parse_qs(
+        parsed.query, keep_blank_values=True
+    ).get("__route")
+    if not route_values:
+        return
 
+    route = "/" + urllib.parse.unquote(route_values[0]).lstrip("/")
+    real_query = [
+        (k, v)
+        for k, v in urllib.parse.parse_qsl(parsed.query, keep_blank_values=True)
+        if k != "__route"
+    ]
+    self.path = route
+    if real_query:
+        self.path += "?" + urllib.parse.urlencode(real_query)
+
+_upstream_do_get = handler.do_GET
+_upstream_do_post = handler.do_POST
+
+def do_GET(self):
+    _restore_original_path(self)
+    return _upstream_do_get(self)
+
+def do_POST(self):
+    _restore_original_path(self)
+    return _upstream_do_post(self)
+
+handler.do_GET = do_GET
+handler.do_POST = do_POST
+
+# Optional runtime configuration through Vercel Environment Variables.
 api_keys = os.getenv("GEMINI_API_KEYS", "").strip()
 if api_keys:
     CONFIG["api_keys"] = [k.strip() for k in api_keys.split(",") if k.strip()]
