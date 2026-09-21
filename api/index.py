@@ -5,12 +5,17 @@ from pathlib import Path
 from gemini_web2api.server import GeminiHandler
 from gemini_web2api.config import CONFIG
 
-# Vercel's Python runtime detects a top-level handler class that explicitly
-# inherits from BaseHTTPRequestHandler.
-class handler(GeminiHandler):
+# Vercel detects Python Functions by finding a top-level handler class that
+# explicitly inherits BaseHTTPRequestHandler.
+class handler(BaseHTTPRequestHandler):
     pass
 
-# Optional runtime configuration through Vercel Environment Variables.
+# Reuse the complete upstream GeminiHandler implementation while keeping the
+# explicit BaseHTTPRequestHandler inheritance that Vercel's detector expects.
+for _name, _value in GeminiHandler.__dict__.items():
+    if _name not in {"__dict__", "__weakref__"}:
+        setattr(handler, _name, _value)
+
 api_keys = os.getenv("GEMINI_API_KEYS", "").strip()
 if api_keys:
     CONFIG["api_keys"] = [k.strip() for k in api_keys.split(",") if k.strip()]
