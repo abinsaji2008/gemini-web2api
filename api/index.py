@@ -1,13 +1,12 @@
 import os
 import sys
-import tempfile
-import urllib.request
+import urllib.parse
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 
 UPSTREAM_REF = os.getenv("GEMINI_WEB2API_UPSTREAM_REF", "main")
 BASE_URL = f"https://raw.githubusercontent.com/Sophomoresty/gemini-web2api/{UPSTREAM_REF}"
-CACHE_DIR = Path(tempfile.gettempdir()) / "gemini-web2api"
+CACHE_DIR = Path("/tmp/gemini-web2api")
 
 FILES = {
     "gemini_web2api/__init__.py": CACHE_DIR / "gemini_web2api" / "__init__.py",
@@ -32,18 +31,34 @@ def _load_upstream():
     import gemini_web2api.config as config
     return server.GeminiHandler, config.CONFIG
 
+# Import here so the Vercel builder can resolve the dependency as part of the
+# module graph. Runtime files are fetched on cold start into /tmp.
+import urllib.request
 GeminiHandler, CONFIG = _load_upstream()
 
-# Vercel's static detector requires an explicit top-level handler class.
+# Vercel's Python detector requires a top-level handler inheriting directly
+# from BaseHTTPRequestHandler.
 class handler(BaseHTTPRequestHandler):
     pass
 
-# Copy the upstream request-handler implementation onto the Vercel handler.
 for _name, _value in GeminiHandler.__dict__.items():
     if _name not in {"__dict__", "__weakref__"}:
         setattr(handler, _name, _value)
 
-# Optional runtime configuration through Vercel Environment Variables.
+# Vercel internal rewrites can expose the rewritten destination as self.path.
+# Restore the original request path captured by vercel.json.
+_original_path = handler.path if hasattr(handler, "path") else ""
+_parsed = urllib.parse.urlsplit(_original_path)
+_route = urllib.parse.parse_qs(_parsed.query).get("__route", [None])[0]
+if _route is not None:
+    # Preserve any real query parameters while removing the routing marker.
+    _route_path = "/" + urllib.parse.unquote(_route).lstrip("/")
+    _query_pairs = urllib.parse.parse_qsl(_parsed.query, keep_blank_values=True)
+    _query_pairs = [(k, v) for k, v in _query_pairs if k != "__route"]
+    handler.path = _route_path + (
+        "?" + urllib.parse.urlencode(_query_pairs) if _query_pairs else ""
+    )
+
 api_keys = os.getenv("GEMINI_API_KEYS", "").strip()
 if api_keys:
     CONFIG["api_keys"] = [k.strip() for k in api_keys.split(",") if k.strip()]
