@@ -7,8 +7,16 @@
   },
   "rewrites": [
     {
-      "source": "/(.*)",
-      "destination": "/api/index.py?__route=$1"
+      "source": "/",
+      "destination": "/api/index.py/"
+    },
+    {
+      "source": "/v1/:path*",
+      "destination": "/api/index.py/v1/:path*"
+    },
+    {
+      "source": "/v1beta/:path*",
+      "destination": "/api/index.py/v1beta/:path*"
     }
   ]
 }
