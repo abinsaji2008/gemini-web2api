@@ -33,14 +33,23 @@ GeminiHandler = upstream.GeminiHandler
 CONFIG = upstream.CONFIG
 
 # Vercel's Python detector requires a top-level handler inheriting from
-# BaseHTTPRequestHandler.
-class handler(BaseHTTPRequestHandler):
-    pass
+# BaseHTTPRequestHandler. For this deployment, chat completions are always
+# returned as one complete JSON answer: the upstream SSE/token stream is not
+# exposed to clients, even when they send "stream": true.
+class handler(GeminiHandler):
+    def handle_chat(self, body: bytes):
+        import json
 
-# Copy all HTTP handler methods from the upstream implementation.
-for _name, _value in GeminiHandler.__dict__.items():
-    if _name not in {"__dict__", "__weakref__"}:
-        setattr(handler, _name, _value)
+        try:
+            request = json.loads(body)
+            if isinstance(request, dict):
+                request["stream"] = False
+                body = json.dumps(request, ensure_ascii=False).encode("utf-8")
+        except Exception:
+            # Let the upstream handler return its normal JSON parsing error.
+            pass
+
+        return super().handle_chat(body)
 
 # The upstream handler expects the original public URL in self.path.
 # With a Vercel "routes" entry, the original request path is preserved.
